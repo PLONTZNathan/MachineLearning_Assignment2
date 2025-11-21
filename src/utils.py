@@ -30,3 +30,39 @@ def plot_y_yhat(y, yhat):
     
     plt.axis('square')
     plt.show()
+
+
+from sklearn.model_selection import KFold
+from sklearn.base import clone
+import numpy as np
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
+from sklearn.linear_model import LinearRegression
+
+def baseline_cross_validation(X, y):
+    pipeline = Pipeline([
+            ('scaler', StandardScaler()),   
+            ('regressor', LinearRegression())
+    ])
+    
+    kf = KFold(n_splits=5, shuffle=True)
+    models = []
+
+    for train_idx, test_idx in kf.split(X):
+        X_tr, y_tr = X.iloc[train_idx], y.iloc[train_idx]
+        model = clone(pipeline)
+        model.fit(X_tr, y_tr)
+        models.append(model)
+    
+    return models
+
+
+import numpy as np
+
+def predict_average(models, X_test):
+    
+    y_pred = np.zeros(len(X_test))
+    for model in models:
+        y_pred += model.predict(X_test)
+    y_pred /= len(models)
+    return y_pred
