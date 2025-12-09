@@ -13,6 +13,23 @@ def clean_train_data(train):
 
 import matplotlib.pyplot as plt
 import numpy as np
+from sklearn.preprocessing import PolynomialFeatures
+
+def plot_y_vs_yhat(y_true, y_pred, title="y vs y_hat"):
+    plt.figure(figsize=(6, 6))
+    plt.scatter(y_true, y_pred, alpha=0.6)
+
+    # Diagonale perfetta y = y_hat
+    min_val = min(np.min(y_true), np.min(y_pred))
+    max_val = max(np.max(y_true), np.max(y_pred))
+    plt.plot([min_val, max_val], [min_val, max_val], linestyle="--")
+
+    plt.xlabel("True y")
+    plt.ylabel("Predicted y")
+    plt.title(title)
+    plt.grid(True)
+    plt.tight_layout()
+    plt.show()
 
 def plot_y_yhat(y, yhat):
     y = np.array(y)
@@ -31,6 +48,101 @@ def plot_y_yhat(y, yhat):
     plt.axis('square')
     plt.show()
 
+def select_knn_model(
+    X_tr, y_tr,
+    k_list=[3, 5, 7, 9, 11],
+    weights_list=["uniform", "distance"],
+    n_splits=5,
+    shuffle=True
+):
+
+    cv_scores = {}
+    best_score = np.inf
+    best_params = None
+    best_model = None
+
+    for k in k_list:
+        for w in weights_list:
+            pipe_knn = Pipeline([
+                ("scaler", StandardScaler()),
+                ("knn", KNeighborsRegressor(
+                    n_neighbors=k,
+                    weights=w
+                ))
+            ])
+
+            kfold = KFold(n_splits=n_splits, shuffle=shuffle)
+
+            # out-of-fold predictions sul training
+            y_tr_oof = cross_val_predict(pipe_knn, X_tr, y_tr, cv=kfold)
+
+            cmse_cv = error_metric(y_tr, y_tr_oof,c=0)
+            cv_scores[(k, w)] = cmse_cv
+
+            if cmse_cv < best_score:
+                best_score = cmse_cv
+                best_params = {"k": k, "weights": w}
+                best_model = pipe_knn.fit(X_tr, y_tr)
+
+    return best_model, best_params, cv_scores
+
+# Polynomial Regression
+# best_model_fitted, best_degree, cv_scores (dict).
+
+def select_polynomial_model(
+    X_tr, y_tr,
+    degrees=[1, 2, 3, 4, 5],
+    n_splits=5,
+    shuffle=True
+):
+
+    cv_scores = {}
+    best_score = np.inf
+    best_degree = None
+    best_model = None
+
+    for d in degrees:
+        pipe_poly = Pipeline([
+            ("scaler", StandardScaler()),
+            ("poly", PolynomialFeatures(degree=d, include_bias=False)),
+            ("lin", LinearRegression())
+        ])
+
+        kfold = KFold(n_splits=n_splits, shuffle=shuffle)
+
+
+        y_tr_oof = cross_val_predict(pipe_poly, X_tr, y_tr, cv=kfold)
+
+
+        cmse_cv = error_metric(y_tr, y_tr_oof,c=0)
+        cv_scores[d] = cmse_cv
+
+
+        if cmse_cv < best_score:
+            best_score = cmse_cv
+            best_degree = d
+            best_model = pipe_poly.fit(X_tr, y_tr)
+
+    return best_model, best_degree, cv_scores
+
+
+def evaluate_model_cv(model, X, y, n_splits=5, shuffle=True):
+
+    kf = KFold(n_splits=n_splits, shuffle=shuffle)
+    fold_errors = []
+
+    for train_idx, test_idx in kf.split(X):
+        X_tr, X_te = X.iloc[train_idx], X.iloc[test_idx]
+        y_tr, y_te = y.iloc[train_idx], y.iloc[test_idx]
+
+        m = clone(model)
+        m.fit(X_tr, y_tr)
+
+        y_hat = m.predict(X_te)
+        err = error_metric(y_te.values, y_hat, c=0)
+        fold_errors.append(err)
+
+    return fold_errors
 
 from sklearn.model_selection import KFold
 from sklearn.base import clone
@@ -58,7 +170,8 @@ def baseline_cross_validation(X, y):
 
 
 import numpy as np
-
+from sklearn.model_selection import cross_val_predict
+from sklearn.neighbors import KNeighborsRegressor
 def predict_average(models, X_test):
     
     y_pred = np.zeros(len(X_test))
@@ -81,7 +194,7 @@ from sklearn.linear_model import LinearRegression
 from sklearn.model_selection import KFold
 from sklearn.base import clone
 
-def baseline_cv_predict(df, keep_missing=True, n_splits=5, c=0):
+def baseline_cv_predict(df, keep_missing=True, n_splits=5):
     # Optionally drop indicator columns
     if not keep_missing:
         df = df.drop(columns=[col for col in df.columns if "_missing" in col])
@@ -99,7 +212,7 @@ def baseline_cv_predict(df, keep_missing=True, n_splits=5, c=0):
     ])
     
     # Cross-validation
-    kf = KFold(n_splits=n_splits, shuffle=True, random_state=42)
+    kf = KFold(n_splits=n_splits, shuffle=True)
     models = []
     y_pred_total = np.zeros(len(X))
     
